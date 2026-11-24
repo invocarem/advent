@@ -1,0 +1,8 @@
+# Line endings: store and check out LF for every text file, on every
+# platform.  This overrides core.autocrlf, so the working tree, the index,
+# and the repository all agree and Git stops warning about CRLF rewrites.
+#
+# If a file type ever needs CRLF (e.g. Windows .bat/.cmd scripts), override
+# it after the catch-all rule, like this:
+#   *.bat text eol=crlf
+* text=auto eol=lf
