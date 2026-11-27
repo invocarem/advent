@@ -4,12 +4,15 @@ The port is deliberately split into *data* and *engine*, mirroring Knuth's
 separation between the cave tables and the simulation loop.
 
 > **Status.** The port runs: `python -m advent --seed 7` plays a complete
-> game. `vocabulary.py` and `data.py` are verified against `advent.w` (all
-> 140 locations, 740 travel instructions, 66 objects, 87 notes, 14 remarks,
-> 282 words, 13 messages match), and `rng.py`, `game.py`, `cli.py` and
-> `__main__.py` implement the simulation, the front end and the entry point.
-> The test suite covers the vocabulary, the travel table and scripted games;
-> a recorded 350-point walkthrough (`docs/walkthrough.md` and
+> game in the terminal, and `python -m advent --gui` plays the same game in a
+> tkinter window. `vocabulary.py` and `data.py` are verified against
+> `advent.w` (all 140 locations, 740 travel instructions, 66 objects, 87
+> notes, 14 remarks, 282 words, 13 messages match), and `rng.py`, `game.py`,
+> `cli.py` and `__main__.py` implement the simulation, the terminal front end
+> and the entry point. `scenes.py`, `art.py`, `session.py` and `gui.py` add the
+> graphical front end. The test suite covers the vocabulary, the travel table,
+> scripted games, the scene/art tables and the window bridge; a recorded
+> 350-point walkthrough (`docs/walkthrough.md` and
 > `tests/test_walkthrough.py`) is still to be written.
 
 ```text
@@ -21,12 +24,20 @@ advent/
   rng.py          Knuth's linear congruential generator
   game.py         the simulation: parser, actions, actors, clocks, scoring
   cli.py          terminal front end
+  scenes.py       the scene/backdrop/prop table, item labels and exit labels
+  art.py          procedural vector art: backdrops, props, item icons
+  session.py      one Game in a worker thread, bridged by queues
+  gui.py          tkinter window: canvas painter, object cards, verbs, exits
   __main__.py     python -m advent
 tests/
   conftest.py           scripted console and fixtures
   test_vocabulary.py    words, enums, fixed and default messages
   test_travel.py        travel-table invariants and the quirky exits
   test_game.py          scripted games, death, closing, scoring
+  test_scenes.py        scene/art coverage, labels, exit words, painters
+  test_front_end.py     read-only engine views used by the GUI
+  test_session.py       the worker-thread bridge
+  test_gui.py           a real window (skipped without a display)
 ```
 
 ## Mapping from WEB to Python
@@ -57,7 +68,45 @@ class Console(Protocol):
 `advent/cli.py` implements it with `sys.stdin.readline()` / `sys.stdout`
 (so prompts are flushed before blocking); `tests/conftest.py` implements it
 with a scripted list of answers and an output buffer. This keeps the engine
-usable from a future web or TUI front end and makes scripted games testable.
+usable from any front end and makes scripted games testable.
+
+## The graphical front end
+
+`python -m advent --gui` starts `advent/gui.py`, which uses the same engine
+through a different console implementation:
+
+| Module | Role |
+| --- | --- |
+| `scenes.py` | The scene for every location (`Scene(backdrop, props, palette, seed)`), plus labels, icon names, command words, actor slots and exit labels. No tkinter import. |
+| `art.py` | Procedural painters for 22 backdrops, 41 props and 52 item icons, all from `rect`/`oval`/`polygon`/`line`/`text` in a logical 1000×600 canvas. A `Painter` protocol separates the art from tkinter; the tests supply a recording painter. |
+| `session.py` | Runs one `Game` in a worker thread. Output and prompts arrive as `Event`s on a queue, each prompt carrying a frozen `GameSnapshot`; `submit(line)` answers the pending prompt. No tkinter import. |
+| `gui.py` | The window: a `CanvasPainter` over a tkinter `Canvas`, object cards, verb and exit buttons, a narration pane, a command entry, and Yes/No buttons. |
+
+The engine gained four read-only views used only by front ends:
+`here_objects()`, `inventory()`, `is_dark()` and `possible_motions()`.
+The last one is deliberately not a call to the movement routine: that routine
+consumes the random generator for percentage exits and prints failure
+messages, so asking "which buttons should I draw?" would perturb the game.
+`possible_motions()` evaluates object and property conditions, treats
+percentage conditions as possible, and writes nothing.
+
+The constructor normally asks the welcome question before returning. A window
+must paint the opening scene before that question is answered, so the
+constructor accepts `welcome=False`; `game.welcome()` then asks the question
+and fixes the turn limit. The terminal front end uses the default single-step
+construction and is unchanged.
+
+The window never reads the live `Game` from its own thread. `EngineSession`
+publishes a frozen `GameSnapshot` (location, light, objects here, inventory,
+possible motions, turns, bottle and lamp state) with every prompt and with the
+final event; the window paints only from that snapshot. This keeps the engine
+thread the sole owner of the mutable object lists, even if a window resize or a
+selection happens while a command is being processed.
+
+The art is not a new source of game data: it only interprets the room text.
+Every message, object placement, probability and score still comes from
+`game.py` and `data.py`. See [gui.md](gui.md) for the screen layout, controls,
+the scene model, and how to add a backdrop, prop or icon.
 
 ## Control flow
 
@@ -136,6 +185,16 @@ passes one through. The suite in `tests/` uses a scripted console
 * `test_game.py` — scripted games (welcome, building, grate, magic words,
   `look`, `say`), death and resurrection, the closing cave, and the scoring
   formula.
+* `test_scenes.py` — every location has a scene; every object has a label,
+  icon and (where the vocabulary has one) a command word; every exit command
+  parses back to its motion; every scene and icon paints; dark scenes are
+  darker; palettes are complete.
+* `test_front_end.py` — the read-only engine views, including that
+  `possible_motions()` leaves the random generator and object lists untouched.
+* `test_session.py` — the worker-thread bridge: starting, answering prompts,
+  quitting and stopping.
+* `test_gui.py` — a real tkinter canvas draws every scene and icon, and a real
+  window plays a few moves. These tests skip when tkinter has no display.
 
 Because the game is random, scripted games are only meaningful with a fixed
 seed. A full 350-point walkthrough has not been recorded yet; when it is, it
@@ -148,5 +207,6 @@ with.
 * Woods's prime-time closing logic (Knuth removed it).
 * The binary obfuscation of the original FORTRAN version.
 * The FORTRAN program's encryption of messages.
-* Any GUI or persistence; the port is stateless between runs, like the
-  original.
+* Persistence; the port is stateless between runs, like the original.
+* Photorealistic or hand-drawn artwork: the graphical front end generates its
+  pictures procedurally from the room descriptions.

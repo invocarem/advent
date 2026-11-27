@@ -37,14 +37,17 @@ two-word commands such as `take lamp`, `west`, `unlock grate`, or
 | [rooms.md](rooms.md) | The full text of every room description, short and long. |
 | [objects.md](objects.md) | Every object: names, starting places, movable/immovable groups, property values, and the messages tied to them. |
 | [reference.md](reference.md) | The complete vocabulary (motions, objects, actions, magic words), default messages, hints, ranks, and scoring tables. |
+| [gui.md](gui.md) | The graphical front end: layout, controls, the scene/art model, and how to add art. |
 | [walkthrough.md](walkthrough.md) | A full solution, including the 350-point "master's section" ending. |
 | [implementation.md](implementation.md) | How the Python port is organized and how it maps onto Knuth's WEB sections. |
 
-## Quick start (CLI)
+## Quick start
 
 ```bash
-python -m advent            # play, random seed from the clock
+python -m advent            # play in the terminal, random seed from the clock
 python -m advent --seed 7   # deterministic run (handy for scripted games)
+python -m advent --gui      # play in a graphical window
+python -m advent --gui --seed 7
 ```
 
 Inside the game:
@@ -71,6 +74,10 @@ most two words, in either order (`take lamp` = `lamp take`).
   Bedquilt, the troll bridge, the hidden cave, and the two storage rooms.
 * The complete ~300-word vocabulary, including `xyzzy`, `plugh`, `plover`,
   `y2`, the `fee fie foe foo` incantation, and all the odd synonyms.
+* A graphical front end in which every location is a drawn scene and every
+  object is a picture you can click (`python -m advent --gui`); the original
+  text still appears in full in the narration pane, and the typed parser is
+  still available.
 * The travel table with probabilistic exits, conditional exits
   (carrying/locating an object, object property tests), forced moves, and
   the pseudo-locations that implement special effects.
@@ -101,9 +108,13 @@ documented deviations are:
 * **Input robustness.** EOF (Ctrl-D) ends the game cleanly instead of
   looping forever.
 * **Output stream.** Messages are emitted through a small console
-  abstraction so the same engine can later back a web or GUI front end.
-  Prompt strings (`* `, `** `) and all message text are preserved exactly,
-  including the original's occasional missing trailing newline.
+  abstraction, so the same engine backs both the terminal and the tkinter
+  front end. Prompt strings (`* `, `** `) and all message text are preserved
+  exactly, including the original's occasional missing trailing newline.
+* **A graphical front end.** `python -m advent --gui` paints each location and
+  its objects as vector art and offers clickable verbs and exits. The art is
+  an interpretation of the room text; no game rule or message changes. The
+  terminal remains the default front end.
 * **Structure.** `goto`-based control flow is re-expressed as explicit
   state machines and exceptions; the game logic and table data are kept
   apart (`advent/data.py` vs. `advent/game.py`).
@@ -126,15 +137,20 @@ advent/               the Python port
   rng.py              Knuth's 1021·x mod 2^20 generator
   game.py             the engine (UI-independent)
   cli.py              terminal front end
+  scenes.py           the scene for every location, item labels, exit labels
+  art.py              procedural vector art (backdrops, props, item icons)
+  session.py          engine thread + input/output queues for the GUI
+  gui.py              tkinter graphical front end
   __main__.py         `python -m advent`
-tests/                pytest suite (vocabulary, travel table, scripted games)
+tests/                pytest suite (vocabulary, travel table, scripted games,
+                      scenes/art coverage, the session bridge, a GUI smoke test)
 ```
 
-> **Status.** The game runs. `advent.w`'s tables are transcribed and
-> machine-verified, the engine and CLI are complete, and the test suite
-> passes. Still missing: a recorded 350-point walkthrough
-> (`walkthrough.md` and `tests/test_walkthrough.py`). See
-> [implementation.md](implementation.md).
+> **Status.** The game runs in a terminal and in a graphical window.
+> `advent.w`'s tables are transcribed and machine-verified, the engine and both
+> front ends are complete, and the test suite passes. Still missing: a recorded
+> 350-point walkthrough (`walkthrough.md` and `tests/test_walkthrough.py`). See
+> [implementation.md](implementation.md) and [gui.md](gui.md).
 
 ## A note on the source's style
 

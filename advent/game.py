@@ -127,7 +127,13 @@ def _streq(a: str, b: str) -> bool:
 class Game:
     """One game of Adventure."""
 
-    def __init__(self, console: Console, seed: int | None = None) -> None:
+    def __init__(
+        self,
+        console: Console,
+        seed: int | None = None,
+        *,
+        welcome: bool = True,
+    ) -> None:
         self.console = console
         self.rng = Rng(seed)
 
@@ -196,6 +202,18 @@ class Game:
         self.newloc = int(Location.ROAD)
 
         self._build_objects()
+        if welcome:
+            self.welcome()
+
+    def welcome(self) -> None:
+        """@<Welcome message@>: offer instructions and fix the turn limit.
+
+        The constructor does this, exactly as the original does.  A front end
+        that needs a fully built :class:`Game` before the first question (the
+        graphical one does, so it can paint the opening scene) can pass
+        ``welcome=False`` and call this itself just before :meth:`play`.
+        """
+        self.limit = 0
         self._offer(0)  # welcome message, and maybe instructions
         self.limit = D.INSTRUCTIONS_LIMIT if self.hinted[0] else D.INITIAL_LIMIT
 
@@ -370,6 +388,67 @@ class Game:
         if 0 <= index < len(D.NOTES):
             return D.NOTES[index]
         return None
+
+    # ------------------------------------------------------------------
+    # Read-only views for front ends
+    # ------------------------------------------------------------------
+
+    def here_objects(self) -> list[int]:
+        """The objects listed at this location, in the original's list order."""
+        result: list[int] = []
+        if not 0 < self.loc <= MAX_LOC:
+            return result
+        t = self.first[self.loc]
+        while t:
+            result.append(t)
+            t = self.link[t]
+        return result
+
+    def inventory(self) -> list[int]:
+        """The objects the INVENTORY command lists (parts and the bear excluded)."""
+        return [
+            t
+            for t in range(1, MAX_OBJ + 1)
+            if self._toting(t)
+            and (self.base[t] == 0 or self.base[t] == t)
+            and t != int(Object.BEAR)
+        ]
+
+    def is_dark(self) -> bool:
+        """True when the current location is unlit (the engine's ``dark``)."""
+        if not 0 < self.loc <= MAX_LOC:
+            return False
+        return self._dark()
+
+    def possible_motions(self) -> list[int]:
+        """Motion words worth trying from here, without touching the game state.
+
+        The engine decides moves in :meth:`_determine_next_location`, which
+        consumes the random generator for percentage exits and prints messages
+        for failed ones.  A front end may not do that just to draw buttons, so
+        this only asks which instructions *could* fire: object and property
+        conditions are evaluated, percentage conditions count as possible, and
+        nothing is written.
+        """
+        motions: list[int] = []
+        if not 0 < self.loc <= MAX_LOC:
+            return motions
+        forced = self._forced_move(self.loc)
+        for q in range(D.START[self.loc], D.START[self.loc + 1]):
+            travel = D.TRAVELS[q]
+            if travel.mot in motions:
+                continue
+            if forced or self._condition_possible(travel.cond):
+                motions.append(travel.mot)
+        return motions
+
+    def _condition_possible(self, j: int) -> bool:
+        """Read-only twin of the condition test in @<Determine the next location@>."""
+        if j > 300:
+            return self.prop[j % 100] != (j - 300) // 100
+        if j <= 100:
+            return True
+        return self._toting(j % 100) or (j >= 200 and self._is_at_loc(j % 100))
 
     # ------------------------------------------------------------------
     # Hints (@<Subroutines@>, @<Check if a hint applies@>)
